@@ -17,10 +17,8 @@
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.media :as dwm]
-   [app.main.data.workspace.thumbnails :as dwt]
    [app.main.data.workspace.undo :as dwu]
    [app.main.refs :as refs]
-   [app.main.render :refer [component-svg]]
    [app.main.store :as st]
    [app.main.ui.components.editable-label :refer [editable-label]]
    [app.main.ui.components.file-uploader :refer [file-uploader]]
@@ -33,6 +31,7 @@
    [app.util.dom :as dom]
    [app.util.dom.dnd :as dnd]
    [app.util.i18n :as i18n :refer [tr]]
+   ;; [app.util.timers :as tm]
    [cuerdas.core :as str]
    [okulary.core :as l]
    [potok.core :as ptk]
@@ -53,33 +52,14 @@
                       component)]
       [root-shape container])))
 
-(defn- get-component-thumbnail-uri
-  "Returns the component thumbnail uri"
-  [file-id component]
-  (let [page-id   (:main-instance-page component)
-        root-id   (:main-instance-id component)
-        object-id (dwt/fmt-object-id file-id page-id root-id)]
-    (if (= file-id (:id @refs/workspace-file))
-      (mf/deref (refs/workspace-thumbnail-by-id object-id))
-      (let [thumbnails (dm/get-in @refs/workspace-libraries [file-id :thumbnails (dm/str object-id)])]
-        thumbnails))))
 
-(mf/defc component-item-thumbnail
-  "Component that renders the thumbnail image or the original SVG."
-  {::mf/wrap-props false}
-  [{:keys [file-id root-shape component container]}]
-  (let [retry (mf/use-state 0)
-        thumbnail-uri (get-component-thumbnail-uri file-id component)]
-    (if (some? thumbnail-uri)
-      [:img {:src thumbnail-uri
-             :on-error (fn []
-                         (when (@retry < 3)
-                           (inc retry)))
-             :loading "lazy"
-             :decoding "async"
-             :class (dom/classnames (css :thumbnail) true)}]
-      [:& component-svg {:root-shape root-shape
-                         :objects (:objects container)}])))
+    ;; NOTE: We don't schedule the thumbnail generation on idle right now
+    ;; until we can queue and handle thumbnail batching properly.
+    #_(mf/with-effect []
+      (when-not (some? thumbnail-uri)
+        (tm/schedule-on-idle
+         #(st/emit! (dwl/update-component-thumbnail (:id component) file-id)))))
+
 
 (mf/defc components-item
   {::mf/wrap-props false}
@@ -174,7 +154,7 @@
        (when (and (some? root-shape)
                   (some? container))
          [:*
-          [:& component-item-thumbnail {:file-id file-id
+          [:& cmm/component-item-thumbnail {:file-id file-id
                                         :root-shape root-shape
                                         :component component
                                         :container container}]
@@ -216,7 +196,7 @@
                   (some? container))
          [:*
           (when visible?
-            [:& component-item-thumbnail {:file-id file-id
+            [:& cmm/component-item-thumbnail {:file-id file-id
                                           :root-shape root-shape
                                           :component component
                                           :container container}])
